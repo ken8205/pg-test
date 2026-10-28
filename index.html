@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>머리 각도 안내</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: camera view left, alignment target right (stacks on phones). Single dark clinical look to cut screen glare on the patient's face. */
+:root{
+  --bg:#0f1417; --panel:#182025; --line:#2b373e; --fg:#e8eef0; --muted:#8fa1a8;
+  --ok:#3ecf8e; --warn:#f2b84b; --bad:#ef6a5b; --accent:#6cc4e8;
+  --sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans);
+  padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));
+  padding-block:max(10px,env(safe-area-inset-top,0px)) max(10px,env(safe-area-inset-bottom,0px));
+  display:flex;flex-direction:column;gap:10px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+h1{font-size:17px;margin:0 8px 0 0;font-weight:600;letter-spacing:.01em}
+label{color:var(--muted);font-size:13px}
+input,select,button,textarea{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+input#pid{width:9em}
+button{cursor:pointer}
+button.primary{background:var(--accent);color:#06222e;border-color:var(--accent);font-weight:600}
+button.on{background:var(--ok);color:#062616;border-color:var(--ok)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:12px}
+@media (max-width:760px),(orientation:portrait){main{grid-template-columns:1fr;grid-template-rows:auto auto}}
+.cam{position:relative;background:#000;border-radius:12px;overflow:hidden;min-height:200px;aspect-ratio:4/3;max-width:100%;align-self:start}
+.cam video,.cam canvas,.cam img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.cam img{opacity:.35;pointer-events:none}
+.cam .msg{position:absolute;inset:auto 0 0 0;padding:8px 12px;background:rgba(0,0,0,.55);font-size:13px;color:var(--muted)}
+.side{display:flex;flex-direction:column;gap:10px;min-width:0}
+.status{border-radius:12px;padding:14px 16px;font-size:clamp(20px,3.2vw,32px);font-weight:600;text-align:center;background:var(--panel);border:2px solid var(--line)}
+.status.ok{background:color-mix(in srgb,var(--ok) 22%,var(--panel));border-color:var(--ok)}
+.status.bad{background:color-mix(in srgb,var(--bad) 18%,var(--panel));border-color:var(--bad)}
+.status small{display:block;font-size:14px;font-weight:400;color:var(--muted);margin-top:2px}
+.target{background:var(--panel);border-radius:12px;padding:8px;display:flex;justify-content:center}
+.target canvas{width:min(100%,360px);aspect-ratio:1;height:auto}
+.read{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.read div{background:var(--panel);border-radius:10px;padding:8px 10px}
+.read b{display:block;font:500 clamp(20px,3vw,28px) var(--mono);font-variant-numeric:tabular-nums}
+.read span{font-size:12px;color:var(--muted);letter-spacing:.03em}
+.read .over b{color:var(--bad)}
+details{background:var(--panel);border-radius:10px;padding:8px 12px}
+summary{cursor:pointer;color:var(--muted)}
+textarea{width:100%;min-height:80px;font:12px var(--mono);margin-top:6px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>머리 각도 안내</h1>
+  <div class="row">
+    <label for="pid">환자 ID</label><input id="pid" placeholder="예: P0012" autocomplete="off">
+    <button id="save" class="primary">기준 저장</button>
+    <select id="base" aria-label="불러올 기준"><option value="">표준 자세 (모든 사람 공통)</option></select>
+    <label for="tol">허용</label><select id="tol"><option>1.5</option><option selected>2</option><option>3</option></select><label for="tol">°</label>
+    <button id="watch">촬영 중 감시</button>
+    <button id="ghostBtn">기준 사진 겹치기</button>
+  </div>
+</header>
+<main>
+  <div class="cam">
+    <video id="v" playsinline muted autoplay></video>
+    <img id="ghost" alt="" hidden>
+    <canvas id="ov"></canvas>
+    <div class="msg" id="msg">카메라를 켜는 중…</div>
+  </div>
+  <div class="side">
+    <div class="status" id="status">얼굴을 찾는 중<small>화면 정면을 봐 주세요</small></div>
+    <div class="target"><canvas id="tg" width="720" height="720"></canvas></div>
+    <div class="read">
+      <div id="rp"><span>숙임(+) · 들림(−)</span><b id="vp">–</b></div>
+      <div id="ry"><span>좌우 돌림</span><b id="vy">–</b></div>
+      <div id="rr"><span>옆 기울기</span><b id="vr">–</b></div>
+    </div>
+    <details>
+      <summary>기준 백업 · 옮기기</summary>
+      <p style="margin:6px 0;color:var(--muted);font-size:13px">기준은 이 기기 브라우저에만 저장됩니다. 다른 기기로 옮기려면 아래 글자를 복사해 그 기기의 같은 칸에 붙여 넣고 가져오기를 누르세요.</p>
+      <div class="row"><button id="exp">내보내기</button><button id="imp">가져오기</button><button id="del">선택한 기준 삭제</button></div>
+      <textarea id="io" aria-label="기준 데이터"></textarea>
+    </details>
+    <details open>
+      <summary>촬영 기록 (감시 결과)</summary>
+      <pre id="log" style="white-space:pre-wrap;font:12px var(--mono);margin:6px 0 0;color:var(--muted)">감시를 켰다 끄면 그동안의 각도 요약이 여기에 남습니다.</pre>
+    </details>
+  </div>
+</main>
+<script>
+(() => {
+const qs = new URLSearchParams(location.search);
+const BASE = qs.get('base') || 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/';
+const $ = id => document.getElementById(id);
+const v = $('v'), ov = $('ov'), octx = ov.getContext('2d'), tg = $('tg'), tctx = tg.getContext('2d');
+const KEY = 'poseguide.baselines.v1';
+let store = {}; try { store = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { store = {}; }
+const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} };
+
+// ---- vector helpers
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]], dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const norm=a=>{const l=Math.hypot(...a)||1;return a.map(x=>x/l)}, sc=(a,s)=>a.map(x=>x*s);
+const deg = r => r*180/Math.PI;
+
+// Face axes in camera space. X: subject's right-eye outer corner -> left-eye outer corner; Y: forehead -> chin; Z = X x Y.
+// Averaging several landmark pairs makes the frame steadier than single points.
+function axes(lm, w, h) {
+  const P = i => [lm[i].x*w, lm[i].y*h, lm[i].z*w];
+  const avg = ids => sc(ids.map(P).reduce((s,p)=>[s[0]+p[0],s[1]+p[1],s[2]+p[2]],[0,0,0]),1/ids.length);
+  const L = avg([263,362,386,374]), R = avg([33,133,159,145]);
+  const top = avg([10,151,9]), bot = avg([152,175,199]);
+  const X = norm(sub(L, R));
+  let Y = sub(bot, top); Y = norm(sub(Y, sc(X, dot(Y, X))));
+  const Z = cross(X, Y);
+  return {X, Y, Z};
+}
+// Angles of the current frame C relative to a reference frame B (both {X,Y,Z}).
+function rel(C, B) {
+  return {
+    pitch: deg(Math.atan2(dot(C.Y, B.Z), dot(C.Y, B.Y))),   // chin moving toward the camera axis = 숙임/들림
+    yaw:   deg(Math.atan2(dot(C.X, B.Z), dot(C.X, B.X))),
+    roll:  deg(Math.atan2(dot(C.X, B.Y), dot(C.X, B.X)))
+  };
+}
+const CAM = {X:[1,0,0], Y:[0,1,0], Z:[0,0,1]};
+
+// ---- state
+let stats = null;
+let cur = null, sm = null, ref = null, watching = false, lastOk = null, badSince = 0;
+const tol = () => parseFloat($('tol').value);
+
+function fillSelect(sel) {
+  const s = $('base'); s.length = 1;
+  Object.keys(store).sort().forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = k + ' · ' + store[k].date; s.appendChild(o); });
+  if (sel && store[sel]) s.value = sel;
+  applyRef();
+}
+function applyRef() {
+  const k = $('base').value; ref = k ? store[k] : null;
+  const g = $('ghost');
+  if (ref && ref.img) { g.src = ref.img; } else { g.hidden = true; $('ghostBtn').classList.remove('on'); }
+}
+$('base').addEventListener('change', applyRef);
+$('save').addEventListener('click', () => {
+  const id = $('pid').value.trim();
+  if (!id) { $('pid').focus(); setMsg('환자 ID를 먼저 입력하세요.'); return; }
+  if (!sm) { setMsg('얼굴이 보일 때 저장할 수 있습니다.'); return; }
+  const c = document.createElement('canvas'); c.width = 240; c.height = 180;
+  c.getContext('2d').drawImage(v, 0, 0, 240, 180);
+  store[id] = { X: sm.X, Y: sm.Y, Z: sm.Z, date: (d => { const z = n => String(n).padStart(2,'0'); return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+' '+z(d.getHours())+':'+z(d.getMinutes()); })(new Date()), img: c.toDataURL('image/jpeg', .7) };
+  persist(); fillSelect(id); setMsg(id + ' 기준을 저장했습니다. 다음 촬영 때 목록에서 고르세요.');
+});
+$('ghostBtn').addEventListener('click', () => {
+  const g = $('ghost'); if (!ref || !ref.img) { setMsg('겹칠 기준 사진이 없습니다. 기준을 먼저 고르세요.'); return; }
+  g.hidden = !g.hidden; $('ghostBtn').classList.toggle('on', !g.hidden);
+});
+let actx = null;
+$('watch').addEventListener('click', () => {
+  watching = !watching; $('watch').classList.toggle('on', watching);
+  $('watch').textContent = watching ? '감시 중 (누르면 끝)' : '촬영 중 감시';
+  if (watching) { stats = { t0: Date.now(), n: 0, ok: 0, lost: 0, sum: [0,0,0], max: [0,0,0] }; }
+  else if (stats) { reportStats(); }
+  if (watching && !actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+});
+function beep() {
+  if (!actx) return; const o = actx.createOscillator(), g = actx.createGain();
+  o.frequency.value = 880; g.gain.value = .15; o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + .18);
+}
+$('exp').addEventListener('click', () => { $('io').value = JSON.stringify(store); $('io').select(); try { navigator.clipboard.writeText($('io').value).then(()=>setMsg('복사했습니다.'),()=>{}); } catch(e){} });
+$('imp').addEventListener('click', () => { try { const d = JSON.parse($('io').value); Object.assign(store, d); persist(); fillSelect(); setMsg('가져왔습니다: ' + Object.keys(d).length + '개'); } catch (e) { setMsg('붙여 넣은 글자를 읽을 수 없습니다. 내보내기로 만든 글자 전체를 붙여 넣으세요.'); } });
+$('del').addEventListener('click', () => { const k = $('base').value; if (!k) return; delete store[k]; persist(); fillSelect(); setMsg(k + ' 기준을 삭제했습니다.'); });
+function reportStats() {
+  const S0 = stats; stats = null; if (!S0.n) { setMsg('감시 중 얼굴이 잡히지 않았습니다.'); return; }
+  const r = x => (x>0?'+':'') + x.toFixed(1) + '°';
+  const mean = S0.sum.map(x => x / S0.n);
+  const line = [new Date().toLocaleString('ko-KR'), ($('base').value || '표준 자세'), Math.round((Date.now()-S0.t0)/1000) + '초',
+    '기준 안 ' + Math.round(100*S0.ok/S0.n) + '%',
+    '평균 숙임 ' + r(mean[0]) + ' 돌림 ' + r(mean[1]) + ' 기울기 ' + r(mean[2]),
+    '최대 숙임 ' + r(S0.max[0]) + ' 돌림 ' + r(S0.max[1]) + ' 기울기 ' + r(S0.max[2])].join(' · ');
+  setMsg('감시 결과: ' + line);
+  let log = []; try { log = JSON.parse(localStorage.getItem(KEY + '.log') || '[]'); } catch (e) {}
+  log.unshift(line); try { localStorage.setItem(KEY + '.log', JSON.stringify(log.slice(0, 50))); } catch (e) {}
+  $('log').textContent = log.join('\n');
+}
+function setMsg(t) { $('msg').textContent = t; }
+
+// ---- drawing
+function drawTarget(a) {
+  const W = tg.width, c = W/2, t = tol(), span = 12, px = (W*0.42)/span;
+  tctx.clearRect(0,0,W,W);
+  tctx.lineWidth = 3; tctx.strokeStyle = '#2b373e';
+  [span, span*2/3, span/3].forEach(r => { tctx.beginPath(); tctx.arc(c,c,r*px,0,7); tctx.stroke(); });
+  tctx.beginPath(); tctx.moveTo(c-span*px,c); tctx.lineTo(c+span*px,c); tctx.moveTo(c,c-span*px); tctx.lineTo(c,c+span*px); tctx.stroke();
+  tctx.fillStyle = 'rgba(62,207,142,.18)'; tctx.strokeStyle = '#3ecf8e'; tctx.beginPath(); tctx.arc(c,c,t*px,0,7); tctx.fill(); tctx.stroke();
+  tctx.fillStyle = '#8fa1a8'; tctx.font = '26px "IBM Plex Sans KR",sans-serif'; tctx.textAlign = 'center';
+  tctx.fillText('턱 들기', c, 30); tctx.fillText('턱 당기기', c, W-12);
+  if (!a) return;
+  const ok = Math.max(Math.abs(a.pitch),Math.abs(a.yaw),Math.abs(a.roll)) <= t;
+  const col = ok ? '#3ecf8e' : '#ef6a5b';
+  // dot: mirrored so it moves the way the patient sees themselves
+  const x = c + Math.max(-span,Math.min(span,-a.yaw))*px, y = c + Math.max(-span,Math.min(span,a.pitch))*px;
+  // roll bar through the dot
+  const r = a.roll*Math.PI/180, L = 70;
+  tctx.strokeStyle = col; tctx.lineWidth = 8; tctx.lineCap = 'round';
+  tctx.beginPath(); tctx.moveTo(x - L*Math.cos(r), y + L*Math.sin(r)); tctx.lineTo(x + L*Math.cos(r), y - L*Math.sin(r)); tctx.stroke();
+  tctx.fillStyle = col; tctx.beginPath(); tctx.arc(x,y,22,0,7); tctx.fill();
+}
+function show(a) {
+  const t = tol(), st = $('status');
+  if (!a) { if (watching && stats) stats.lost++; st.className = 'status'; st.innerHTML = '얼굴을 찾는 중<small>화면 정면을 봐 주세요</small>'; ['vp','vy','vr'].forEach(i=>$(i).textContent='–'); drawTarget(null); return; }
+  const f = x => { const t = x.toFixed(1); return (t === '-0.0' ? '0.0' : (x > 0.05 ? '+' : '') + t) + '°'; };
+  $('vp').textContent = f(a.pitch); $('vy').textContent = f(a.yaw); $('vr').textContent = f(a.roll);
+  $('rp').classList.toggle('over', Math.abs(a.pitch) > t); $('ry').classList.toggle('over', Math.abs(a.yaw) > t); $('rr').classList.toggle('over', Math.abs(a.roll) > t);
+  const worst = [['pitch',a.pitch],['yaw',a.yaw],['roll',a.roll]].sort((p,q)=>Math.abs(q[1])-Math.abs(p[1]))[0];
+  const ok = Math.abs(worst[1]) <= t;
+  let hint = '';
+  if (!ok) hint = worst[0]==='pitch' ? (worst[1]>0 ? '턱을 조금 드세요' : '턱을 조금 당기세요')
+              : worst[0]==='yaw' ? '얼굴을 화면 정면으로 돌려 주세요' : '고개를 똑바로 세워 주세요';
+  st.className = 'status ' + (ok ? 'ok' : 'bad');
+  st.innerHTML = ok ? (watching ? '자세 유지 중' : '좋습니다. 그대로 눈만 감으세요') + '<small>' + (ref ? '이 환자의 기준 자세와 일치' : '표준 자세와 일치') + '</small>'
+                    : hint + '<small>' + (ref ? '이 환자의 기준 자세와 다름' : '표준 자세와 다름') + '</small>';
+  drawTarget(a);
+  if (watching && stats) { stats.n++; if (ok) stats.ok++; [a.pitch,a.yaw,a.roll].forEach((x,i)=>{ stats.sum[i]+=x; if (Math.abs(x)>Math.abs(stats.max[i])) stats.max[i]=x; }); }
+  if (watching && !ok) { if (!badSince) badSince = performance.now(); if (performance.now() - badSince > 500) { beep(); badSince = performance.now() + 700; } } else badSince = 0;
+}
+
+// ---- face mesh (library loaded from BASE so the page can also run from local copies)
+let fm = null;
+function initMesh() {
+fm = new FaceMesh({ locateFile: f => BASE + f });
+fm.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: .5, minTrackingConfidence: .5 });
+fm.onResults(res => {
+  const w = v.videoWidth, h = v.videoHeight; ov.width = w; ov.height = h; octx.clearRect(0,0,w,h);
+  const lm = res.multiFaceLandmarks && res.multiFaceLandmarks[0];
+  if (!lm) { sm = null; show(null); return; }
+  octx.fillStyle = 'rgba(108,196,232,.8)';
+  for (const i of [33,133,263,362,10,152,1,61,291]) { octx.beginPath(); octx.arc(lm[i].x*w, lm[i].y*h, 3, 0, 7); octx.fill(); }
+  const A = axes(lm, w, h);
+  // light smoothing of the axes (about 5-frame window)
+  if (!sm) sm = A; else { const k = .3; sm = { X: norm(sm.X.map((x,i)=>x*(1-k)+A.X[i]*k)), Y: norm(sm.Y.map((x,i)=>x*(1-k)+A.Y[i]*k)) }; sm.Z = cross(sm.X, sm.Y); }
+  window.__pose = rel(sm, ref || CAM);
+  show(window.__pose);
+});
+}
+let busy = false;
+async function loop() {
+  if (fm && !busy && v.readyState >= 2) { busy = true; try { await fm.send({ image: v }); } catch (e) { setMsg('얼굴 인식 오류: ' + e.message); } busy = false; }
+  requestAnimationFrame(loop);
+}
+async function start() {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
+    v.srcObject = s; await v.play(); setMsg('카메라 켜짐. 환자 눈높이, 정면 약 1 m에 두세요.'); loop();
+  } catch (e) {
+    setMsg('카메라를 쓸 수 없습니다 (' + e.name + '). 브라우저 주소창의 카메라 권한을 허용하거나, https 주소 또는 PC에서 파일로 여세요.');
+  }
+}
+fillSelect(); drawTarget(null);
+try { const lg = JSON.parse(localStorage.getItem(KEY + '.log') || '[]'); if (lg.length) $('log').textContent = lg.join('\n'); } catch (e) {}
+const sc0 = document.createElement('script'); sc0.src = BASE + 'face_mesh.js';
+sc0.onload = () => { initMesh(); start(); };
+sc0.onerror = () => setMsg('얼굴 인식 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하세요.');
+document.head.appendChild(sc0);
+try { navigator.wakeLock && navigator.wakeLock.request('screen').catch(()=>{}); } catch (e) {}
+})();
+</script>
+</body>
+</html>

@@ -83,6 +83,11 @@ textarea{width:100%;min-height:80px;font:12px var(--mono);margin-top:6px}
       <div id="ry"><span>좌우 돌림</span><b id="vy">–</b></div>
       <div id="rr"><span>옆 기울기</span><b id="vr">–</b></div>
     </div>
+    <details id="zeroBox">
+      <summary>카메라 영점 (설치할 때 한 번)</summary>
+      <p style="margin:6px 0;color:var(--muted);font-size:13px">태블릿이 눈높이보다 낮거나 높아도 됩니다. 설치 후 자세가 바른 사람(직원)을 앉혀 정면을 보게 하고 아래 버튼을 누르면, 그 자세가 이 자리의 '표준 자세'가 됩니다. 태블릿 위치를 바꾸면 다시 누르세요.</p>
+      <div class="row"><button id="zeroSet">지금 자세를 영점으로</button><button id="zeroClr">영점 지우기</button><span id="zeroState" style="color:var(--muted);font-size:13px"></span></div>
+    </details>
     <details>
       <summary>기준 백업 · 옮기기</summary>
       <p style="margin:6px 0;color:var(--muted);font-size:13px">기준은 이 기기 브라우저에만 저장됩니다. 다른 기기로 옮기려면 아래 글자를 복사해 그 기기의 같은 칸에 붙여 넣고 가져오기를 누르세요.</p>
@@ -131,7 +136,9 @@ function rel(C, B) {
     roll:  deg(Math.atan2(dot(C.X, B.Y), dot(C.X, B.X)))
   };
 }
-const CAM = {X:[1,0,0], Y:[0,1,0], Z:[0,0,1]};
+const CAM0 = {X:[1,0,0], Y:[0,1,0], Z:[0,0,1]};
+let CAM = CAM0;
+try { const z = JSON.parse(localStorage.getItem(KEY + '.camzero') || 'null'); if (z && z.X) CAM = z; } catch (e) {}
 
 // ---- state
 let stats = null;
@@ -192,6 +199,15 @@ function reportStats() {
   $('log').textContent = log.join('\n');
 }
 function setMsg(t) { $('msg').textContent = t; }
+function zeroLabel() { $('zeroState').textContent = CAM === CAM0 ? '영점 없음 (카메라 정면 기준)' : '영점 설정됨 · ' + (CAM.date || ''); }
+$('zeroSet').addEventListener('click', () => {
+  if (!sm) { setMsg('얼굴이 보일 때 영점을 설정할 수 있습니다.'); return; }
+  const d = new Date(), z2 = n => String(n).padStart(2, '0');
+  CAM = { X: sm.X, Y: sm.Y, Z: sm.Z, date: d.getFullYear()+'-'+z2(d.getMonth()+1)+'-'+z2(d.getDate())+' '+z2(d.getHours())+':'+z2(d.getMinutes()) };
+  try { localStorage.setItem(KEY + '.camzero', JSON.stringify(CAM)); } catch (e) {}
+  zeroLabel(); setMsg('영점을 설정했습니다. 이제 표준 자세는 이 자세가 기준입니다.');
+});
+$('zeroClr').addEventListener('click', () => { CAM = CAM0; try { localStorage.removeItem(KEY + '.camzero'); } catch (e) {} zeroLabel(); setMsg('영점을 지웠습니다.'); });
 
 // ---- drawing
 function drawTarget(a) {
@@ -264,7 +280,7 @@ async function start() {
     setMsg('카메라를 쓸 수 없습니다 (' + e.name + '). 브라우저 주소창의 카메라 권한을 허용하거나, https 주소 또는 PC에서 파일로 여세요.');
   }
 }
-fillSelect(); drawTarget(null);
+fillSelect(); drawTarget(null); zeroLabel();
 try { const lg = JSON.parse(localStorage.getItem(KEY + '.log') || '[]'); if (lg.length) $('log').textContent = lg.join('\n'); } catch (e) {}
 const sc0 = document.createElement('script'); sc0.src = BASE + 'face_mesh.js';
 sc0.onload = () => { initMesh(); start(); };
